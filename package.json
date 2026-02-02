@@ -5,11 +5,17 @@
   "description": "Encore Typescript Starter",
   "license": "MPL-2.0",
   "type": "module",
+  "scripts": {
+    "test": "vitest"
+  },
   "devDependencies": {
+    "@types/luxon": "^3.7.1",
     "@types/node": "^20.5.7",
-    "typescript": "^5.2.2"
+    "typescript": "^5.2.2",
+    "vitest": "^4.0.18"
   },
   "dependencies": {
-    "encore.dev": "^1.53.4"
+    "encore.dev": "^1.53.4",
+    "luxon": "^3.7.2"
   }
 }
