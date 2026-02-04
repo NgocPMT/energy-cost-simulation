@@ -1,5 +1,15 @@
 import { test as baseTest } from "vitest";
-import { RawPlanWithDetails } from "../../src/simulation/simulation.type";
+import {
+  NormalizedPlan,
+  RawPlanWithDetails,
+} from "../../src/simulation/simulation.type";
+import { normalizeMode2 } from "../../src/simulation/modules/normalize";
+
+const intervals = normalizeMode2({
+  averageMonthlyUsage: 450,
+  profileType: "HOME_EVENING",
+  postcode: "2000",
+});
 
 const test = baseTest.extend({
   rawPlan: {
@@ -10,7 +20,7 @@ const test = baseTest.extend({
     brandName: "GloBird Energy",
     geography: {
       distributors: ["United Energy"],
-      includedPostcodes: ["3104"],
+      includedPostcodes: ["2000"],
     },
     displayName:
       "GloBird  Combo FOUR4FREE Residential (Two Rate) United Energy",
@@ -175,6 +185,107 @@ const test = baseTest.extend({
         "No contract term, no exit fees. You can switch to another provider without penalty. We will always notify you before we change your discounts, prices or rates.",
     },
   } satisfies RawPlanWithDetails,
+  normalizedPlan: {
+    planId: "GLO724613MR@VEC",
+    brandName: "GloBird Energy",
+    displayName:
+      "GloBird  Combo FOUR4FREE Residential (Two Rate) United Energy",
+    fees: [
+      {
+        rate: 0,
+        term: "PERCENT_OF_BILL",
+        type: "OTHER",
+        description: "0 Credit Card Payment Processing Fee",
+      },
+      {
+        term: "FIXED",
+        type: "CONNECTION",
+        amount: 15,
+        description:
+          "This is smart meter remote re-connection fee. It assumes a smart meter being remotely connected during business hours when we have been given enough prior notice.  However, the fee can vary depending on the type of meter, the location, and other factors.",
+      },
+      {
+        term: "FIXED",
+        type: "DISCONNECTION",
+        amount: 15,
+        description:
+          "This is a smart meter remote disconnection fee, however, this fee can vary depending on your type of meter, the meter location, and other factors.",
+      },
+      {
+        term: "FIXED",
+        type: "OTHER",
+        amount: 4,
+        description:
+          "Paper Bill. If you have opted to receive a paper bill by post",
+      },
+    ],
+    discounts: [
+      {
+        type: "CONDITIONAL",
+        description:
+          "Discounts only apply when the condition is met. 2% when you pay the bill by the due date. Further 2% when you have both an active gas and electricity account for the same premises on one account and you pay the bill by the due date, and a further 1% when you pay the bill by the due date with direct debit. The discounts apply to both the supply and consumption charges and don't apply to solar credit.",
+        displayName: "Prompt Payment Discounts",
+        rate: 0.05,
+      },
+    ],
+    eligibilityConstraints: [
+      "This contingent plan is available to residential customers with an eligible electricity smart meter and when bundled with one of GloBird's eligible gas plans for the same premise on one account. Other conditions apply - call 13 3456 to check if you are eligible.",
+    ],
+    tariffPeriods: [
+      {
+        endDate: "12-31",
+        startDate: "01-01",
+        rates: [
+          {
+            type: "PEAK",
+            volumeLimit: 15,
+            unitPrice: 0.258,
+            timeWindows: [
+              {
+                days: ["MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN"],
+                endTime: "00:00",
+                startTime: "14:00",
+              },
+              {
+                days: ["MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN"],
+                endTime: "10:00",
+                startTime: "00:00",
+              },
+            ],
+          },
+          {
+            type: "PEAK",
+            unitPrice: 0.28,
+            timeWindows: [
+              {
+                days: ["MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN"],
+                endTime: "00:00",
+                startTime: "14:00",
+              },
+              {
+                days: ["MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN"],
+                endTime: "10:00",
+                startTime: "00:00",
+              },
+            ],
+          },
+          {
+            type: "OFF_PEAK",
+            unitPrice: 0.000001,
+            timeWindows: [
+              {
+                days: ["MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN"],
+                endTime: "14:00",
+                startTime: "10:00",
+              },
+            ],
+          },
+        ],
+        dailySupplyCharge: 0.96,
+      },
+    ],
+  } satisfies NormalizedPlan,
+  intervals,
 });
 
 export default test;

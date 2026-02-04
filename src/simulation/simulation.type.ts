@@ -140,6 +140,7 @@ export type Fee =
 export interface NormalizedDiscount {
   type: string;
   description: string;
+  displayName: string;
   amount?: number;
-  percent?: number;
+  rate?: number;
 }

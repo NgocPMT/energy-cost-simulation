@@ -25,15 +25,17 @@ export const calculateCost = ({ plan, intervals }: CalculatePlanInput) => {
     const { start, kwh } = interval;
     const { minuteOfDay, dt, day } = parseISOStringToMinutes(start);
     const dateStr = dt.toISODate();
-    const currentDate = DateTime.fromISO(dt.toISO()).toFormat("MM-dd");
+    const currentDate = dt.toFormat("MM-dd");
 
     if (dateStr !== currentDayStr) {
-      currentDayStr = dateStr;
-      dailyUsage = 0;
       dailySupplyCharge = getDailySupplyCharge({
         tariffPeriods: plan.tariffPeriods,
         currentDate,
       });
+      totalCost += dailySupplyCharge;
+
+      currentDayStr = dateStr;
+      dailyUsage = 0;
       dayCount++;
     }
 
@@ -45,12 +47,14 @@ export const calculateCost = ({ plan, intervals }: CalculatePlanInput) => {
       currentMinute: minuteOfDay,
     });
 
-    const cost = dailySupplyCharge + kwh * rate.unitPrice;
+    const usageCost = kwh * rate.unitPrice;
 
-    totalCost += cost;
+    totalCost += usageCost;
     totalKwh += kwh;
     dailyUsage += kwh;
   }
+
+  return { totalCost, totalKwh };
 };
 
 export interface GetDailySupplyChargeInput {
@@ -62,17 +66,15 @@ export const getDailySupplyCharge = ({
   tariffPeriods,
   currentDate,
 }: GetDailySupplyChargeInput) => {
-  for (const tariffPeriod of tariffPeriods) {
-    const start = tariffPeriod.startDate;
-    const end = tariffPeriod.endDate;
-    if (currentDate > start && currentDate < end) {
-      return tariffPeriod.dailySupplyCharge;
-    }
+  const tariffPeriod = findTariffPeriod({ tariffPeriods, currentDate });
+
+  if (!tariffPeriod) {
+    throw new Error(
+      "Error getting supply charge: There is no daily supply charge matched in the current plan",
+    );
   }
 
-  throw new Error(
-    "Error getting supply charge: There is no daily supply charge matched in the current plan",
-  );
+  return tariffPeriod.dailySupplyCharge;
 };
 
 export interface GetUsageRateInput {
@@ -90,13 +92,7 @@ export const getUsageRate = ({
   currentMinute,
   currentDailyUsage,
 }: GetUsageRateInput) => {
-  const tariffPeriod = tariffPeriods.find((tariffPeriod) => {
-    const start = tariffPeriod.startDate;
-    const end = tariffPeriod.endDate;
-    if (currentDate > start && currentDate < end) {
-      return tariffPeriod.dailySupplyCharge;
-    }
-  });
+  const tariffPeriod = findTariffPeriod({ tariffPeriods, currentDate });
 
   if (!tariffPeriod) {
     throw Error(
@@ -106,7 +102,7 @@ export const getUsageRate = ({
 
   const rates = tariffPeriod.rates;
 
-  const filteredTimeWindows = rates.filter((rate) => {
+  const matchedRates = rates.filter((rate) => {
     return rate.timeWindows.some((window) => {
       const start = parseHourMinuteToMinutes(window.startTime);
       let end = parseHourMinuteToMinutes(window.endTime);
@@ -121,13 +117,13 @@ export const getUsageRate = ({
   });
 
   // Sort: Rate with limit first
-  filteredTimeWindows.sort((w1, w2) => {
+  matchedRates.sort((w1, w2) => {
     const limit1 = w1.volumeLimit ?? Number.MAX_VALUE;
     const limit2 = w2.volumeLimit ?? Number.MAX_VALUE;
     return limit1 - limit2;
   });
 
-  for (const rate of rates) {
+  for (const rate of matchedRates) {
     // Fallback for no limit or exceed previous volume limit
     if (rate.volumeLimit === undefined) {
       return rate;
@@ -141,4 +137,27 @@ export const getUsageRate = ({
   throw Error(
     "Failed to get usage charge: There is no rate matched in the current plan",
   );
+};
+
+export interface FindTariffPeriodInput {
+  tariffPeriods: NormalizedTariffPeriod[];
+  currentDate: string;
+}
+
+export const findTariffPeriod = ({
+  tariffPeriods,
+  currentDate,
+}: FindTariffPeriodInput) => {
+  const tariffPeriod = tariffPeriods.find((tariffPeriod) => {
+    const start = tariffPeriod.startDate;
+    const end = tariffPeriod.endDate;
+
+    // Handle plan span 2 years edge case
+    if (start < end) {
+      return currentDate >= start && currentDate <= end;
+    } else {
+      return currentDate >= start || currentDate <= end;
+    }
+  });
+  return tariffPeriod;
 };
