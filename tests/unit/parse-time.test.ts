@@ -22,15 +22,15 @@ describe("Parse string with hh:mm format to minutes", () => {
 describe("Parse string with ISO format to minutes", () => {
   it("String with no minutes", () => {
     const isoString = "2026-02-04T14:00:00Z";
-    const minutes = parseISOStringToMinutes(isoString);
+    const result = parseISOStringToMinutes(isoString);
 
-    expect(minutes).toBe(14 * 60);
+    expect(result.minuteOfDay).toBe(14 * 60);
   });
   it("String with minutes", () => {
     const isoString = "2026-02-04T14:30:00Z";
-    const minutes = parseISOStringToMinutes(isoString);
+    const result = parseISOStringToMinutes(isoString);
 
-    expect(minutes).toBe(14 * 60 + 30);
+    expect(result.minuteOfDay).toBe(14 * 60 + 30);
   });
   it("String with offset", () => {
     const isoString = "2026-02-04T14:30:00+07:00";

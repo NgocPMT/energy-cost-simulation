@@ -10,5 +10,16 @@ export const parseHourMinuteToMinutes = (timeStr: string) => {
 export const parseISOStringToMinutes = (isoString: string) => {
   //todo handle timezone
   const dt = DateTime.fromISO(isoString);
-  return dt.hour * 60 + dt.minute;
+
+  if (!dt.isValid) {
+    throw new Error(
+      `Invalid ISO string provided: ${isoString} (${dt.invalidReason})`,
+    );
+  }
+
+  const minuteOfDay = dt.hour * 60 + dt.minute;
+  const days = ["MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN"];
+  const day = days[dt.weekday - 1];
+
+  return { day, minuteOfDay, dt };
 };
