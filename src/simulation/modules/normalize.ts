@@ -18,7 +18,9 @@ export interface SimulatedInterval {
   kwh: number;
 }
 
-export const normalizeMode2 = (input: NormalizeMode2Input) => {
+export const normalizeMode2 = (
+  input: NormalizeMode2Input,
+): SimulatedInterval[] => {
   const intervals: SimulatedInterval[] = [];
   const profile = PROFILES[input.profileType];
   // Use to simulate the next 365 days
