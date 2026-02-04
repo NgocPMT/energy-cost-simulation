@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   normalizeMode2,
   NormalizeMode2Input,
-} from "../../src/simulation/normalize";
+} from "../../src/simulation/modules/normalize";
 
 describe("Normalize average monthly usage to 5-min interval reads", () => {
   it("Normalize successfully", () => {

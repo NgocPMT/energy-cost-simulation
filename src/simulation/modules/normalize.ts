@@ -1,5 +1,5 @@
-import PROFILES from "../profiles";
-import SEASONAL_MULTIPLIERS, { Month } from "../seasonal-multipliers";
+import PROFILES from "../../profiles";
+import SEASONAL_MULTIPLIERS, { Month } from "../../seasonal-multipliers";
 import { DateTime } from "luxon";
 
 export interface NormalizeMode2Input {
