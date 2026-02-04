@@ -17,15 +17,20 @@ export const calculateCost = ({ plan, intervals }: CalculatePlanInput) => {
   let totalKwh = 0;
 
   let currentDayStr = "";
+  let currentMonth = 0;
   let dailyUsage = 0;
+  let monthlyCost = 0;
+  let monthlyUsage = 0;
   let dailySupplyCharge = 0;
   let dayCount = 0;
+  let monthlyBreakdown = [];
 
   for (const interval of intervals) {
     const { start, kwh } = interval;
     const { minuteOfDay, dt, day } = parseISOStringToMinutes(start);
     const dateStr = dt.toISODate();
     const currentDate = dt.toFormat("MM-dd");
+    const month = dt.month;
 
     if (dateStr !== currentDayStr) {
       dailySupplyCharge = getDailySupplyCharge({
@@ -37,6 +42,20 @@ export const calculateCost = ({ plan, intervals }: CalculatePlanInput) => {
       currentDayStr = dateStr;
       dailyUsage = 0;
       dayCount++;
+    }
+
+    if (month !== currentMonth) {
+      if (currentMonth !== 0) {
+        monthlyBreakdown.push({
+          month,
+          usage: Math.round(monthlyUsage * 100) / 100,
+          cost: Math.round(monthlyCost * 100) / 100,
+        });
+      }
+
+      currentMonth = month;
+      monthlyUsage = 0;
+      monthlyCost = 0;
     }
 
     const rate = getUsageRate({
@@ -52,9 +71,15 @@ export const calculateCost = ({ plan, intervals }: CalculatePlanInput) => {
     totalCost += usageCost;
     totalKwh += kwh;
     dailyUsage += kwh;
+    monthlyCost += usageCost;
+    monthlyUsage += kwh;
   }
 
-  return { totalCost, totalKwh };
+  return {
+    totalCost: Math.round(totalCost * 100) / 100,
+    totalKwh: Math.round(totalKwh * 100) / 100,
+    monthlyBreakdown,
+  };
 };
 
 export interface GetDailySupplyChargeInput {
@@ -107,10 +132,17 @@ export const getUsageRate = ({
       const start = parseHourMinuteToMinutes(window.startTime);
       let end = parseHourMinuteToMinutes(window.endTime);
 
-      if (end === 0) end = 1440;
+      if (window.endTime === "00:00") end = 1440;
 
       const isDayMatch = window.days.includes(currentWeekDay);
-      const isTimeMatch = currentMinute >= start && currentMinute < end;
+
+      let isTimeMatch = false;
+
+      if (start < end) {
+        isTimeMatch = currentMinute >= start && currentMinute < end;
+      } else {
+        isTimeMatch = currentMinute >= start || currentMinute < end;
+      }
 
       return isDayMatch && isTimeMatch;
     });
@@ -134,8 +166,15 @@ export const getUsageRate = ({
     }
   }
 
-  throw Error(
-    "Failed to get usage charge: There is no rate matched in the current plan",
+  if (matchedRates.length === 0) {
+    const time = `${Math.floor(currentMinute / 60)}:${currentMinute % 60}`;
+    throw new Error(
+      `CRITICAL DATA GAP: Plan has no rates defined for ${currentWeekDay} at approx ${time} (Day: ${currentDate})`,
+    );
+  }
+
+  throw new Error(
+    `VOLUME LIMIT EXCEEDED: User usage (${currentDailyUsage}kWh) exceeded all defined limits for ${currentWeekDay} and no fallback (unlimited) rate exists.`,
   );
 };
 
