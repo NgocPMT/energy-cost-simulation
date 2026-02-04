@@ -1,6 +1,11 @@
 import PROFILES from "../../profiles";
 import SEASONAL_MULTIPLIERS, { Month } from "../../seasonal-multipliers";
 import { DateTime } from "luxon";
+import {
+  NormalizedPlan,
+  NormalizedRate,
+  RawPlanWithDetails,
+} from "../simulation.type";
 
 export interface NormalizeMode2Input {
   averageMonthlyUsage: number; // kWh
@@ -51,4 +56,70 @@ export const normalizeMode2 = (
     currentDate = currentDate.plus({ days: 1 }); // Next day
   }
   return intervals;
+};
+
+export const normalizePlan = (input: RawPlanWithDetails): NormalizedPlan => {
+  const contract = input.electricityContract;
+
+  const normalizedPlan = {
+    planId: input.planId,
+    brandName: input.brandName,
+    displayName: input.displayName,
+    tariffPeriods: contract.tariffPeriod.map((period) => {
+      if (period.rateBlockUType === "singleRate") {
+        return {
+          startDate: period.startDate,
+          endDate: period.endDate,
+          dailySupplyCharge: parseFloat(period.dailySupplyCharge),
+          rates: period.singleRate.rates.map(
+            (rate) =>
+              ({
+                type: "PEAK",
+                volumeLimit: rate.volume || undefined,
+                unitPrice: parseFloat(rate.unitPrice),
+                timeWindows: [
+                  {
+                    days: ["MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN"],
+                    startTime: "00:00",
+                    endTime: "24:00",
+                  },
+                ],
+              }) satisfies NormalizedRate,
+          ),
+        };
+      }
+      return {
+        startDate: period.startDate,
+        endDate: period.endDate,
+        dailySupplyCharge: parseFloat(period.dailySupplyCharge),
+        rates: period.timeOfUseRates.flatMap((tou) => {
+          return tou.rates.map((rate) => {
+            return {
+              type: tou.type,
+              volumeLimit: rate.volume || undefined,
+              unitPrice: parseFloat(rate.unitPrice),
+              timeWindows: tou.timeOfUse.map((window) => {
+                return {
+                  days: window.days,
+                  startTime: window.startTime,
+                  endTime: window.endTime,
+                };
+              }),
+            } satisfies NormalizedRate;
+          });
+        }),
+      };
+    }),
+    fees: contract.fees?.map((fee) => {
+      if (fee.term === "FIXED") {
+        return { ...fee, amount: parseFloat(fee.amount) };
+      }
+      return { ...fee, rate: parseFloat(fee.rate) };
+    }),
+    discounts: contract.discounts,
+    eligibilityConstraints: input.electricityContract.eligibility.map(
+      (constraint) => constraint.information,
+    ),
+  };
+  return normalizedPlan;
 };

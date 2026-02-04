@@ -1,8 +1,10 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, expectTypeOf } from "vitest";
 import {
   normalizeMode2,
   NormalizeMode2Input,
+  normalizePlan,
 } from "../../src/simulation/modules/normalize";
+import test from "../fixtures/plan-fixtures";
 
 describe("Normalize average monthly usage to 5-min interval reads", () => {
   it("Normalize successfully", () => {
@@ -24,5 +26,21 @@ describe("Normalize average monthly usage to 5-min interval reads", () => {
     expect(intervals.length).toBe(INTERVAL_COUNTS_BY_YEAR);
     expect(totalKwh).toBeGreaterThan(lowerBound);
     expect(totalKwh).toBeLessThan(upperBound);
+  });
+});
+
+describe("Normalize raw plan to canonical format", () => {
+  test("Successfully normalization", ({ rawPlan }) => {
+    const normalizedPlan = normalizePlan(rawPlan);
+
+    const expectedUnitPrice: number = parseFloat(
+      rawPlan.electricityContract.tariffPeriod[0].timeOfUseRates[0].rates[0]
+        .unitPrice,
+    );
+    const normalizedUnitPrice =
+      normalizedPlan.tariffPeriods[0].rates[0].unitPrice;
+
+    expectTypeOf(normalizedUnitPrice).toBeNumber();
+    expect(normalizedUnitPrice).toBe(expectedUnitPrice);
   });
 });
