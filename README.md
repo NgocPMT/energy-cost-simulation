@@ -10,26 +10,7 @@ infra-config.json
 package.json
 README.md
 tsconfig.json
-encore.gen/
-	auth/
-		index.ts
-	clients/
-		index.d.ts
-		index.js
-	internal/
-		auth/
-			auth.ts
-		clients/
-			simulation/
-				endpoints_testing.js
-				endpoints.d.ts
-				endpoints.js
-		entrypoints/
-			combined/
-				main.ts
-			services/
-				simulation/
-					main.ts
+encore.gen
 src/
 	profiles.ts
 	seasonal-multipliers.ts
