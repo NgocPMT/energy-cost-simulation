@@ -117,7 +117,7 @@ export const normalizePlan = (input: RawPlanWithDetails): NormalizedPlan => {
       return { ...fee, rate: parseFloat(fee.rate) };
     }),
     discounts: contract.discounts,
-    eligibilityConstraints: input.electricityContract.eligibility.map(
+    eligibilityConstraints: input.electricityContract.eligibility?.map(
       (constraint) => constraint.information,
     ),
   };

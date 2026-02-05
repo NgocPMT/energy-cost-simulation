@@ -178,7 +178,7 @@ export const fetchAndNormalizePlans = async (input: GetPlansInput) => {
   const tasks = candidates.map(async (candidate) => {
     return limit(async () => {
       try {
-        const brand = candidate.brand;
+        const brand = candidate.brand.trim();
         const res = (await got
           .get(
             `${planApiUrl()}/${brand}/cds-au/v1/energy/plans/${candidate.planId}`,
@@ -190,7 +190,13 @@ export const fetchAndNormalizePlans = async (input: GetPlansInput) => {
         return normalizedPlan;
       } catch (err) {
         if (err instanceof Error) {
-          console.error(`Failed to fetch plan: ${err.message}`);
+          console.error(
+            `[CRITICAL FAILURE] Plan ID: ${candidate.planId} | Brand: ${candidate.brand}`,
+          );
+
+          console.error(`Error Message: ${err.message}`);
+
+          console.error(`Stack Trace:`, err.stack);
         }
         return null;
       }

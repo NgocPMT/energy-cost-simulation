@@ -20,7 +20,7 @@ export interface RawPlanWithDetails extends RawPlan {
     fees?: RawFee[];
     terms: string;
     isFixed: boolean;
-    discounts: {
+    discounts?: {
       type: string;
       description: string;
       displayName: string;
@@ -30,7 +30,7 @@ export interface RawPlanWithDetails extends RawPlan {
       };
       [key: string]: any;
     }[];
-    eligibility: {
+    eligibility?: {
       type: string;
       information: string;
       [key: string]: any;
@@ -99,8 +99,8 @@ export interface NormalizedPlan {
   brandName: string;
   tariffPeriods: NormalizedTariffPeriod[]; // The main electricity rates
   fees?: Fee[];
-  discounts: NormalizedDiscount[];
-  eligibilityConstraints: string[];
+  discounts?: NormalizedDiscount[];
+  eligibilityConstraints?: string[];
 }
 
 export interface NormalizedTariffPeriod {
