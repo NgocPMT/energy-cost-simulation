@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { calculateMonthlyDemandCost } from "../../src/simulation/modules/calculate";
+import { calculateMonthlyDemandCost } from "../../src/simulation/modules/cost-demand";
 
 describe("calculateMonthlyDemandCost", () => {
   // 1. STANDARD MONTH (30 Days)

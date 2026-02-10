@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   parseHourMinuteToMinutes,
   parseISOStringToMinutes,
-} from "../../src/simulation/modules/parse-time";
+} from "../../src/simulation/modules/utils";
 
 describe("Parse string with hh:mm format to minutes", () => {
   it("String with no minutes", () => {
