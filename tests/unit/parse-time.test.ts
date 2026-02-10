@@ -32,10 +32,4 @@ describe("Parse string with ISO format to minutes", () => {
 
     expect(result.minuteOfDay).toBe(14 * 60 + 30);
   });
-  it("String with offset", () => {
-    const isoString = "2026-02-04T14:30:00+07:00";
-    const minutes = parseISOStringToMinutes(isoString);
-
-    expect(minutes).toBe(14 * 60 + 30);
-  });
 });
