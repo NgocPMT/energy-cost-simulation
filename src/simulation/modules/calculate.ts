@@ -17,20 +17,21 @@ export const calculateCost = ({ plan, intervals }: CalculatePlanInput) => {
   let totalKwh = 0;
 
   let currentDayStr = "";
-  let currentMonth = 0;
+  let currentMonthStr = "";
   let dailyUsage = 0;
   let monthlyCost = 0;
   let monthlyUsage = 0;
   let dailySupplyCharge = 0;
   let dayCount = 0;
   let monthlyBreakdown = [];
+  let monthlyDemandTracker = new Map<string, number>();
 
   for (const interval of intervals) {
     const { start, kwh } = interval;
     const { minuteOfDay, dt, day } = parseISOStringToMinutes(start);
-    const dateStr = dt.toISODate();
     const currentDate = dt.toFormat("MM-dd");
-    const month = dt.month;
+    const dateStr = dt.toISODate();
+    const monthStr = dt.toFormat("yyyy-MM");
 
     if (dateStr !== currentDayStr) {
       dailySupplyCharge = getDailySupplyCharge({
@@ -38,22 +39,31 @@ export const calculateCost = ({ plan, intervals }: CalculatePlanInput) => {
         currentDate,
       });
       totalCost += dailySupplyCharge;
+      monthlyCost += dailySupplyCharge;
 
       currentDayStr = dateStr;
       dailyUsage = 0;
       dayCount++;
     }
 
-    if (month !== currentMonth) {
-      if (currentMonth !== 0) {
+    if (monthStr !== currentMonthStr) {
+      if (currentMonthStr !== "") {
+        const demandCost = calculateMonthlyDemandCost(
+          monthlyDemandTracker,
+          currentMonthStr,
+        );
+        totalCost += demandCost;
         monthlyBreakdown.push({
-          month,
+          monthStr,
           usage: Math.round(monthlyUsage * 100) / 100,
-          cost: Math.round(monthlyCost * 100) / 100,
+          cost: Math.round((monthlyCost + demandCost) * 100) / 100,
+          demandCost: Math.round(demandCost * 100) / 100,
         });
       }
 
-      currentMonth = month;
+      // Reset for new month
+      currentMonthStr = monthStr;
+      monthlyDemandTracker.clear();
       monthlyUsage = 0;
       monthlyCost = 0;
     }
@@ -73,7 +83,30 @@ export const calculateCost = ({ plan, intervals }: CalculatePlanInput) => {
     dailyUsage += kwh;
     monthlyCost += usageCost;
     monthlyUsage += kwh;
+    trackDemandPeak({
+      plan,
+      tracker: monthlyDemandTracker,
+      kwh,
+      durationMinutes: 5,
+      currentDate: dt.toFormat("MM-dd"),
+      currentWeekDay: day,
+      currentMinute: minuteOfDay,
+    });
   }
+
+  // Handle final month (loop ends before the last month)
+  const finalDemandCost = calculateMonthlyDemandCost(
+    monthlyDemandTracker,
+    currentMonthStr,
+  );
+  totalCost += finalDemandCost;
+
+  monthlyBreakdown.push({
+    month: currentMonthStr,
+    usage: Math.round(monthlyUsage * 100) / 100,
+    cost: Math.round((monthlyCost + finalDemandCost) * 100) / 100,
+    demandCost: Math.round(finalDemandCost * 100) / 100,
+  });
 
   return {
     totalCost: Math.round(totalCost * 100) / 100,
@@ -91,7 +124,7 @@ export const getDailySupplyCharge = ({
   tariffPeriods,
   currentDate,
 }: GetDailySupplyChargeInput) => {
-  const tariffPeriod = findTariffPeriod({ tariffPeriods, currentDate });
+  const tariffPeriod = findPeriod({ periods: tariffPeriods, currentDate });
 
   if (!tariffPeriod) {
     throw new Error(
@@ -117,7 +150,7 @@ export const getUsageRate = ({
   currentMinute,
   currentDailyUsage,
 }: GetUsageRateInput) => {
-  const tariffPeriod = findTariffPeriod({ tariffPeriods, currentDate });
+  const tariffPeriod = findPeriod({ periods: tariffPeriods, currentDate });
 
   if (!tariffPeriod) {
     throw Error(
@@ -177,19 +210,104 @@ export const getUsageRate = ({
     `VOLUME LIMIT EXCEEDED: User usage (${currentDailyUsage}kWh) exceeded all defined limits for ${currentWeekDay} and no fallback (unlimited) rate exists.`,
   );
 };
+interface TrackDemandPeakInput {
+  plan: NormalizedPlan;
+  tracker: Map<string, number>;
+  kwh: number;
+  durationMinutes: number;
+  currentDate: string;
+  currentWeekDay: string;
+  currentMinute: number;
+}
 
-export interface FindTariffPeriodInput {
-  tariffPeriods: NormalizedTariffPeriod[];
+const trackDemandPeak = ({
+  plan,
+  tracker,
+  kwh,
+  durationMinutes,
+  currentDate,
+  currentWeekDay,
+  currentMinute,
+}: TrackDemandPeakInput) => {
+  if (!plan.demandCharges) return;
+
+  // A. Find the active Demand Period (Season)
+  const activePeriod = findPeriod({ periods: plan.demandCharges, currentDate });
+  if (!activePeriod) return;
+
+  // B. Check if this specific minute falls in a Demand Window
+  const activeRate = activePeriod.demandCharges.find((charge) => {
+    const start = parseHourMinuteToMinutes(charge.startTime);
+    let end = parseHourMinuteToMinutes(charge.endTime);
+    if (charge.endTime === "00:00") end = 1440;
+
+    const isDay = charge.days.includes(currentWeekDay);
+    const isTime =
+      start < end
+        ? currentMinute >= start && currentMinute < end
+        : currentMinute >= start || currentMinute < end;
+
+    return isDay && isTime;
+  });
+
+  if (activeRate) {
+    // C. Convert to kW (Power)
+    const kw = kwh * (60 / durationMinutes);
+
+    // D. Update the Tracker if this is a new High Score for this rate
+    // We use the rate's amount as a unique key, or generate a unique ID if available
+    const key = `${activeRate.amount}-${activeRate.startTime}`;
+    const currentMax = tracker.get(key) || 0;
+
+    if (kw > currentMax) {
+      tracker.set(key, kw);
+    }
+  }
+};
+
+export const calculateMonthlyDemandCost = (
+  tracker: Map<string, number>,
+  monthStr: string,
+) => {
+  let cost = 0;
+  const daysInMonth = DateTime.fromFormat(monthStr, "yyyy-MM").daysInMonth;
+
+  if (!daysInMonth) {
+    throw new Error(
+      "Failed to calculate monthly demand cost: The month provided is invalid",
+    );
+  }
+
+  // Iterate over all the peaks we tracked
+  tracker.forEach((maxKw, key) => {
+    // Extract the price from the key (or better, store full rate object in Map)
+    // Simplified: Assuming key is "0.3618-15:00" -> price is 0.3618
+    const price = parseFloat(key.split("-")[0]);
+
+    // Formula: MaxKW * Price * Days
+    cost += maxKw * price * daysInMonth;
+  });
+
+  return cost;
+};
+
+interface PeriodWithDates {
+  startDate: string;
+  endDate: string;
+}
+
+export interface FindPeriodInput<T extends PeriodWithDates> {
+  periods: T[];
   currentDate: string;
 }
 
-export const findTariffPeriod = ({
-  tariffPeriods,
+export const findPeriod = <T extends PeriodWithDates>({
+  periods,
   currentDate,
-}: FindTariffPeriodInput) => {
-  const tariffPeriod = tariffPeriods.find((tariffPeriod) => {
-    const start = tariffPeriod.startDate;
-    const end = tariffPeriod.endDate;
+}: FindPeriodInput<T>): T | undefined => {
+  const period = periods.find((period) => {
+    const start = period.startDate;
+    const end = period.endDate;
 
     // Handle plan span 2 years edge case
     if (start < end) {
@@ -198,5 +316,5 @@ export const findTariffPeriod = ({
       return currentDate >= start || currentDate <= end;
     }
   });
-  return tariffPeriod;
+  return period;
 };

@@ -2,9 +2,13 @@ import PROFILES from "../../profiles";
 import SEASONAL_MULTIPLIERS, { Month } from "../../seasonal-multipliers";
 import { DateTime } from "luxon";
 import {
+  NormalizedDemandChargePeriod,
   NormalizedPlan,
   NormalizedRate,
+  RawDemandChargePeriod,
   RawPlanWithDetails,
+  RawSingleRatePeriod,
+  RawTOUPeriod,
 } from "../simulation.type";
 
 export interface NormalizeMode2Input {
@@ -60,56 +64,67 @@ export const normalizeMode2 = (
 
 export const normalizePlan = (input: RawPlanWithDetails): NormalizedPlan => {
   const contract = input.electricityContract;
+  const rawDemandChargePeriods: RawDemandChargePeriod[] = [];
+  const rawTariffPeriods: Array<RawTOUPeriod | RawSingleRatePeriod> = [];
+  contract.tariffPeriod.forEach((period) => {
+    if (period.rateBlockUType === "demandCharges") {
+      rawDemandChargePeriods.push(period);
+    } else {
+      rawTariffPeriods.push(period);
+    }
+  });
 
   const normalizedPlan = {
     planId: input.planId,
     brandName: input.brandName,
     displayName: input.displayName,
-    tariffPeriods: contract.tariffPeriod.map((period) => {
-      if (period.rateBlockUType === "singleRate") {
+    tariffPeriods: rawTariffPeriods
+      .map((period) => {
+        if (period.rateBlockUType === "singleRate") {
+          return {
+            startDate: period.startDate,
+            endDate: period.endDate,
+            dailySupplyCharge: parseFloat(period.dailySupplyCharge),
+            rates: period.singleRate.rates.map(
+              (rate) =>
+                ({
+                  type: "PEAK",
+                  volumeLimit: rate.volume || undefined,
+                  unitPrice: parseFloat(rate.unitPrice),
+                  timeWindows: [
+                    {
+                      days: ["MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN"],
+                      startTime: "00:00",
+                      endTime: "24:00",
+                    },
+                  ],
+                }) satisfies NormalizedRate,
+            ),
+          };
+        }
         return {
           startDate: period.startDate,
           endDate: period.endDate,
           dailySupplyCharge: parseFloat(period.dailySupplyCharge),
-          rates: period.singleRate.rates.map(
-            (rate) =>
-              ({
-                type: "PEAK",
+          rates: period.timeOfUseRates.flatMap((tou) => {
+            return tou.rates.map((rate) => {
+              return {
+                type: tou.type,
                 volumeLimit: rate.volume || undefined,
                 unitPrice: parseFloat(rate.unitPrice),
-                timeWindows: [
-                  {
-                    days: ["MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN"],
-                    startTime: "00:00",
-                    endTime: "24:00",
-                  },
-                ],
-              }) satisfies NormalizedRate,
-          ),
+                timeWindows: tou.timeOfUse.map((window) => {
+                  return {
+                    days: window.days,
+                    startTime: window.startTime,
+                    endTime: window.endTime,
+                  };
+                }),
+              } satisfies NormalizedRate;
+            });
+          }),
         };
-      }
-      return {
-        startDate: period.startDate,
-        endDate: period.endDate,
-        dailySupplyCharge: parseFloat(period.dailySupplyCharge),
-        rates: period.timeOfUseRates.flatMap((tou) => {
-          return tou.rates.map((rate) => {
-            return {
-              type: tou.type,
-              volumeLimit: rate.volume || undefined,
-              unitPrice: parseFloat(rate.unitPrice),
-              timeWindows: tou.timeOfUse.map((window) => {
-                return {
-                  days: window.days,
-                  startTime: window.startTime,
-                  endTime: window.endTime,
-                };
-              }),
-            } satisfies NormalizedRate;
-          });
-        }),
-      };
-    }),
+      })
+      .filter((period) => !!period),
     fees: contract.fees?.map((fee) => {
       if (fee.term === "FIXED") {
         return { ...fee, amount: parseFloat(fee.amount) };
@@ -120,6 +135,23 @@ export const normalizePlan = (input: RawPlanWithDetails): NormalizedPlan => {
     eligibilityConstraints: input.electricityContract.eligibility?.map(
       (constraint) => constraint.information,
     ),
+    demandCharges: rawDemandChargePeriods.map((period) => {
+      return {
+        startDate: period.startDate,
+        endDate: period.endDate,
+        demandCharges: period.demandCharges.map((period) => {
+          return {
+            days: period.days,
+            amount: parseFloat(period.amount),
+            startTime: period.startTime,
+            endTime: period.endTime,
+            measurementPeriod: period.measurementPeriod,
+          };
+        }),
+      } satisfies NormalizedDemandChargePeriod;
+    }),
   };
   return normalizedPlan;
 };
+
+export const getDemandCharges = () => {};
