@@ -94,15 +94,16 @@ Unit tests live under `tests/unit` and integration tests under `tests/integrated
 
 ## API Endpoints
 
-All endpoints are defined with Encore's API helpers. The main public endpoint for this project is:
+All endpoints are defined with Encore's API helpers. There are two primary simulation endpoints:
 
-### POST /simulate-plan-cost
+- `POST /simulate-plan-cost-profile` — simulate costs from an average monthly usage and a profile (e.g. `HOME_EVENING`).
+- `POST /simulate-plan-cost-interval` — simulate costs from an interval read payload (see `RawIntervalRead` under [src/simulation/simulation.type.ts](src/simulation/simulation.type.ts#L1)).
 
 Defined in [src/simulation/simulation.api.ts](src/simulation/simulation.api.ts#L1).
 
 Simulates electricity plan costs from `averageMonthlyUsage`, `profileType`, and `postcode`. Returns up to the 3 cheapest available plans with per-plan simulation results.
 
-Request example
+`A. POST /simulate-plan-cost-profile`
 
 ```json
 {
@@ -116,6 +117,29 @@ Request fields
 
 - `averageMonthlyUsage` (number): average monthly usage in kWh
 - `profileType` (string): one of `HOME_EVENING`, `HOME_ALL_DAY`, `SOLAR_HOUSEHOLD`, `EV_HOUSEHOLD` (see [src/simulation/simulation.api.ts](src/simulation/simulation.api.ts#L1))
+- `postcode` (string): postcode to filter plans by geography
+
+`B. POST /simulate-plan-cost-interval`
+
+```json
+{
+  "date": "2026-02-11T00:00:00Z",
+  "interval_read": {
+    "aggregate_value": 24.2488,
+    "interval_reads": [
+      0.2812, 0.1437, 0.1687, 0.2187, 0.1687, 0.2062, 0.2062, 0.2
+      // ... remaining intervals
+    ],
+    "read_interval_length": 30
+  },
+  "postcode": "2000"
+}
+```
+
+Request fields
+
+- `date` (ISO string): date of interval reads
+- `interval_read`: contains daily usage (`aggregate_value`) and interval reads in format 30-min or 5-min (`read_interval_length`) in a day
 - `postcode` (string): postcode to filter plans by geography
 
 Response shape
@@ -154,7 +178,7 @@ Field details
 
 Where the work happens
 
-- The API expands `averageMonthlyUsage` into simulated intervals via `normalize` ([src/simulation/modules/normalize.ts](src/simulation/modules/normalize.ts#L1)).
+- The profile expansion logic lives in `normalize` ([src/simulation/modules/normalize.ts](src/simulation/modules/normalize.ts#L1)) exposing `normalizeProfile` and `normalizeInterval` helpers.
 - Plans are obtained and normalized in `plan-ingestion` ([src/simulation/modules/plan-ingestion.ts](src/simulation/modules/plan-ingestion.ts#L1)).
 - Costs are computed in `calculate` ([src/simulation/modules/calculate.ts](src/simulation/modules/calculate.ts#L1)).
 
@@ -162,18 +186,6 @@ Where the work happens
 
 - To add new profile types, update `simulation.api.ts` and `normalize.ts` to control how usage expands into hourly/daily intervals.
 - If you change plan ingestion, add fixtures under `tests/fixtures/plan-fixtures.ts` and update unit tests in `tests/unit`.
-
-## Deployment
-
-Push to Encore for staging (existing Encore setup required):
-
-```bash
-git add -A .
-git commit -m "Deploy"
-git push encore
-```
-
-Visit the Encore Cloud dashboard at https://app.encore.dev to monitor deployments.
 
 ---
 
