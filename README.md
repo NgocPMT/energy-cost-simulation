@@ -1,8 +1,10 @@
 # Cost Simulation Service
 
-This project simulates electricity plan costs based on user average monthly electricity usage. It provides the simulated annual cost and monthly breakdown for the top 3 cheapest plans available in the user's postcode area.
+This service simulates electricity plan costs using a user's average monthly electricity usage and a consumption profile. It returns the cheapest plan recommendations (top 3) with annual cost and a monthly breakdown.
 
-## Project Structure
+**Key behavior:** the API expands the average monthly usage into simulated time intervals, ingests available plans for the given postcode, normalizes tariffs, and calculates costs per interval to produce an annual cost and monthly breakdown.
+
+## Repository tree (relevant files)
 
 ```
 encore.app
@@ -12,27 +14,39 @@ README.md
 tsconfig.json
 encore.gen
 src/
-	profiles.ts
-	seasonal-multipliers.ts
-	simulation/
-		encore.service.ts
-		simulation.api.ts
-		simulation.service.ts
-		simulation.type.ts
-		modules/
-			calculate.ts
-			normalize.ts
-			parse-time.ts
-			plan-ingestion.ts
+  profiles.ts
+  seasonal-multipliers.ts
+  solar-factors.ts
+  simulation/
+    encore.service.ts
+    simulation.api.ts
+    simulation.service.ts
+    simulation.type.ts
+    modules/
+      calculate.ts
+      cost-daily-supply.ts
+      cost-demand.ts
+      cost-usage.ts
+      normalize.ts
+      parse-time.ts
+      plan-ingestion.ts
+      utils.ts
 tests/
-	fixtures/
-		plan-fixtures.ts
-	integrated/
-		calculate.test.ts
-	unit/
-		normalize.test.ts
-		parse-time.test.ts
+  fixtures
+  integrated
+  unit
+.env
+.gitignore
+bun.lock
+node_modules/
 ```
+
+Files of particular interest:
+
+- API entry: [src/simulation/simulation.api.ts](src/simulation/simulation.api.ts#L1)
+- Core service: [src/simulation/simulation.service.ts](src/simulation/simulation.service.ts#L1)
+- Cost calculation: [src/simulation/modules/calculate.ts](src/simulation/modules/calculate.ts#L1)
+- Plan ingestion & normalization: [src/simulation/modules/plan-ingestion.ts](src/simulation/modules/plan-ingestion.ts#L1) and [src/simulation/modules/normalize.ts](src/simulation/modules/normalize.ts#L1)
 
 ## Setup Guide
 
@@ -64,7 +78,9 @@ tests/
    encore run
    ```
 
-2. While `encore run` is running, open [http://localhost:9400/](http://localhost:9400/) to view Encore's local developer dashboard.
+While `encore run` is active, view the local dev dashboard at `http://localhost:9400/`.
+
+If you want to run tests or node scripts directly, you can run TypeScript/compiled code or run the test suite below.
 
 ### Testing
 
@@ -74,13 +90,19 @@ Run the test suite:
 encore test
 ```
 
-## API Endpoints Documentation
+Unit tests live under `tests/unit` and integration tests under `tests/integrated`.
+
+## API Endpoints
+
+All endpoints are defined with Encore's API helpers. The main public endpoint for this project is:
 
 ### POST /simulate-plan-cost
 
-Simulates electricity plan costs based on average monthly usage and returns the top 3 cheapest plans with annual cost and monthly breakdown.
+Defined in [src/simulation/simulation.api.ts](src/simulation/simulation.api.ts#L1).
 
-#### Request Body
+Simulates electricity plan costs from `averageMonthlyUsage`, `profileType`, and `postcode`. Returns up to the 3 cheapest available plans with per-plan simulation results.
+
+Request example
 
 ```json
 {
@@ -90,17 +112,17 @@ Simulates electricity plan costs based on average monthly usage and returns the 
 }
 ```
 
-- `averageMonthlyUsage` (number): Average monthly electricity usage in kWh
-- `profileType` (string): One of:
-  - `"HOME_EVENING"`: Home usage with higher consumption in evenings
-  - `"HOME_ALL_DAY"`: Home usage spread throughout the day
-  - `"SOLAR_HOUSEHOLD"`: Household with solar panels
-  - `"EV_HOUSEHOLD"`: Household with electric vehicle
-- `postcode` (string): Australian postcode for plan availability
+Request fields
 
-#### Response
+- `averageMonthlyUsage` (number): average monthly usage in kWh
+- `profileType` (string): one of `HOME_EVENING`, `HOME_ALL_DAY`, `SOLAR_HOUSEHOLD`, `EV_HOUSEHOLD` (see [src/simulation/simulation.api.ts](src/simulation/simulation.api.ts#L1))
+- `postcode` (string): postcode to filter plans by geography
 
-Returns an array of up to 3 plans sorted by total annual cost (lowest first).
+Response shape
+
+An array of plan results (sorted ascending by total cost). Each item contains plan metadata and a `simulationResult` object produced by `calculateCost` in [src/simulation/modules/calculate.ts](src/simulation/modules/calculate.ts#L1).
+
+Example response (abridged):
 
 ```json
 [
@@ -112,30 +134,47 @@ Returns an array of up to 3 plans sorted by total annual cost (lowest first).
       "totalCost": 1234.56,
       "totalKwh": 6000.0,
       "monthlyBreakdown": [
-        {
-          "month": 1,
-          "usage": 500.0,
-          "cost": 103.45
-        },
-        {
-          "month": 2,
-          "usage": 480.0,
-          "cost": 98.12
-        }
-        // ... 10 more months
+        { "month": 1, "usage": 500.0, "cost": 103.45 },
+        { "month": 2, "usage": 480.0, "cost": 98.12 }
+        // ... remaining months
       ]
     }
   }
-  // ... up to 2 more plans
 ]
 ```
 
-- `planId` (string): Unique identifier for the plan
-- `displayName` (string): Human-readable plan name
-- `brandName` (string): Energy provider brand name
-- `simulationResult.totalCost` (number): Total annual cost in AUD (rounded to 2 decimals)
-- `simulationResult.totalKwh` (number): Total annual usage in kWh (rounded to 2 decimals)
-- `simulationResult.monthlyBreakdown` (array): Monthly cost and usage breakdown
-  - `month` (number): Month number (1-12)
-  - `usage` (number): Monthly usage in kWh (rounded to 2 decimals)
-  - `cost` (number): Monthly cost in AUD (rounded to 2 decimals)
+Field details
+
+- `planId`: plan identifier from the ingested plan data
+- `displayName`: human readable plan name
+- `brandName`: provider brand
+- `simulationResult.totalCost`: total annual cost in AUD (rounded to 2 dp)
+- `simulationResult.totalKwh`: total annual kWh across simulated intervals
+- `simulationResult.monthlyBreakdown`: array of monthly objects with `month` (1-12), `usage` (kWh), and `cost` (AUD)
+
+Where the work happens
+
+- The API expands `averageMonthlyUsage` into simulated intervals via `normalize` ([src/simulation/modules/normalize.ts](src/simulation/modules/normalize.ts#L1)).
+- Plans are obtained and normalized in `plan-ingestion` ([src/simulation/modules/plan-ingestion.ts](src/simulation/modules/plan-ingestion.ts#L1)).
+- Costs are computed in `calculate` ([src/simulation/modules/calculate.ts](src/simulation/modules/calculate.ts#L1)).
+
+## Development notes
+
+- To add new profile types, update `simulation.api.ts` and `normalize.ts` to control how usage expands into hourly/daily intervals.
+- If you change plan ingestion, add fixtures under `tests/fixtures/plan-fixtures.ts` and update unit tests in `tests/unit`.
+
+## Deployment
+
+Push to Encore for staging (existing Encore setup required):
+
+```bash
+git add -A .
+git commit -m "Deploy"
+git push encore
+```
+
+Visit the Encore Cloud dashboard at https://app.encore.dev to monitor deployments.
+
+---
+
+File: [README.md](README.md)
