@@ -115,6 +115,32 @@ const PROFILES = {
     1.0,
     2.5, // 21-23: Plug in EV late at night
   ],
+  SOLAR_GENERATION: [
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0, // 00-05: Dark
+    0.1,
+    0.3,
+    0.6,
+    0.8,
+    0.95, // 06-10: Rising
+    1.0,
+    1.0,
+    0.95, // 11-13: Peak Noon
+    0.8,
+    0.6,
+    0.3,
+    0.1, // 14-17: Setting
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0, // 18-23: Dark
+  ],
 };
 
 export default PROFILES;

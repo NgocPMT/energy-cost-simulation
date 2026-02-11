@@ -10,55 +10,93 @@ import {
   RawSingleRatePeriod,
   RawTOUPeriod,
 } from "../simulation.type";
+import {
+  DAILY_SOLAR_YIELD_FACTOR,
+  SOLAR_SEASONAL_FACTORS,
+} from "../../solar-factors";
 
 export interface NormalizeMode2Input {
   averageMonthlyUsage: number; // kWh
-  profileType:
-    | "HOME_EVENING"
-    | "HOME_ALL_DAY"
-    | "SOLAR_HOUSEHOLD"
-    | "EV_HOUSEHOLD";
+  profileType: keyof typeof PROFILES;
   postcode: string;
+  solarSystemSizeKw?: number;
 }
 
 export interface SimulatedInterval {
   start: string;
   end: string;
-  kwh: number;
+  kwh: number; // Grid import
+  exportKwh: number; // Solar export
 }
 
 export const normalizeMode2 = (
   input: NormalizeMode2Input,
 ): SimulatedInterval[] => {
   const intervals: SimulatedInterval[] = [];
-  const profile = PROFILES[input.profileType];
-  // Use to simulate the next 365 days
-  let currentDate = DateTime.now().startOf("day");
 
-  const profileSum = profile.reduce((sum, val) => sum + val, 0);
-  const averageDailyUsage = input.averageMonthlyUsage / 30.4; // Average days in a month
+  const consumptionProfile = PROFILES[input.profileType];
+  const solarProfile = PROFILES.SOLAR_GENERATION;
+
+  const consumptionSum = consumptionProfile.reduce((sum, val) => sum + val, 0);
+  const solarSum = solarProfile.reduce((sum, val) => sum + val, 0);
+
+  const averageDailyConsumption = input.averageMonthlyUsage / 30.4;
+
+  // Calculate Base Solar Generation (if system size exists)
+  const averageDailySolarGen = input.solarSystemSizeKw
+    ? input.solarSystemSizeKw * DAILY_SOLAR_YIELD_FACTOR
+    : 0;
+
+  let currentDate = DateTime.now().startOf("day");
 
   for (let day = 0; day < 365; day++) {
     const month = currentDate.get("month") as Month;
-    // Recalculate daily usage with seasonal factor
-    const seasonalDailyUsage =
-      averageDailyUsage * SEASONAL_MULTIPLIERS[month] || 1.0;
+
+    // Apply Seasonality
+    const dailyConsumption =
+      averageDailyConsumption * (SEASONAL_MULTIPLIERS[month] || 1.0);
+    const dailySolarGen =
+      averageDailySolarGen * (SOLAR_SEASONAL_FACTORS[month] || 1.0);
 
     for (let hour = 0; hour < 24; hour++) {
-      const hourWeight = profile[hour];
-      const intervalKwhHour = (hourWeight / profileSum) * seasonalDailyUsage;
-      const intervalKwh5Min = intervalKwhHour / 12; // Split hourly kWh to 12 x 5-min intervals
+      // Calculate Gross Consumption for this hour
+      const consumptionWeight = consumptionProfile[hour];
+      const grossConsumptionHour =
+        (consumptionWeight / consumptionSum) * dailyConsumption;
+
+      // Calculate Gross Solar Generation for this hour
+      const solarWeight = solarProfile[hour];
+      const grossSolarHour =
+        solarSum > 0 ? (solarWeight / solarSum) * dailySolarGen : 0;
+
+      // If Solar > Load: We Export. If Load > Solar: We Import.
+      const netValue = grossConsumptionHour - grossSolarHour;
+
+      let importHour = 0;
+      let exportHour = 0;
+
+      if (netValue > 0) {
+        importHour = netValue; // Needed from grid
+      } else {
+        exportHour = Math.abs(netValue); // Excess to grid
+      }
+
+      // Distribute to 5-minute intervals
+      const import5Min = importHour / 12;
+      const export5Min = exportHour / 12;
 
       for (let minute = 0; minute < 60; minute += 5) {
         intervals.push({
           start: currentDate.set({ hour, minute }).toISO(),
           end: currentDate.set({ hour, minute: minute + 5 }).toISO(),
-          kwh: intervalKwh5Min,
+          kwh: import5Min,
+          exportKwh: export5Min,
         });
       }
     }
-    currentDate = currentDate.plus({ days: 1 }); // Next day
+    currentDate = currentDate.plus({ days: 1 });
   }
+
   return intervals;
 };
 
