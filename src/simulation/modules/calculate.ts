@@ -8,9 +8,14 @@ import { calculateMonthlyDemandCost, trackDemandPeak } from "./cost-demand";
 export interface CalculatePlanInput {
   plan: NormalizedPlan;
   intervals: SimulatedInterval[];
+  readIntervalLength?: number;
 }
 
-export const calculateCost = ({ plan, intervals }: CalculatePlanInput) => {
+export const calculateCost = ({
+  plan,
+  intervals,
+  readIntervalLength,
+}: CalculatePlanInput) => {
   let totalCost = 0;
   let totalKwh = 0;
 
@@ -28,6 +33,7 @@ export const calculateCost = ({ plan, intervals }: CalculatePlanInput) => {
 
   // For tracking demand spikes
   let monthlyDemandTracker = new Map<string, number>();
+  let isFirstMonth = true;
 
   for (const interval of intervals) {
     const { start, kwh } = interval;
@@ -36,22 +42,7 @@ export const calculateCost = ({ plan, intervals }: CalculatePlanInput) => {
     const dateStr = dt.toISODate();
     const monthStr = dt.toFormat("yyyy-MM");
 
-    // Run every new day
-    if (dateStr !== currentDayStr) {
-      // Calculate daily supply charge
-      const dailySupplyCharge = getDailySupplyCharge({
-        tariffPeriods: plan.tariffPeriods,
-        currentDate,
-      });
-      totalCost += dailySupplyCharge;
-      monthlyCost += dailySupplyCharge;
-
-      // Reset for new day
-      currentDayStr = dateStr;
-      dailyUsage = 0;
-    }
-
-    // Run every new month (This will not run at the final month)
+    // Run every new month (Except the final month)
     if (monthStr !== currentMonthStr) {
       if (currentMonthStr !== "") {
         // If not the first iteration
@@ -69,6 +60,21 @@ export const calculateCost = ({ plan, intervals }: CalculatePlanInput) => {
           cost: roundTo2DecimalPlaces(monthlyCost + demandCost),
           demandCost: roundTo2DecimalPlaces(demandCost),
         });
+      }
+
+      // Run every new day
+      if (dateStr !== currentDayStr) {
+        // Calculate daily supply charge
+        const dailySupplyCharge = getDailySupplyCharge({
+          tariffPeriods: plan.tariffPeriods,
+          currentDate,
+        });
+        totalCost += dailySupplyCharge;
+        monthlyCost += dailySupplyCharge;
+
+        // Reset for new day
+        currentDayStr = dateStr;
+        dailyUsage = 0;
       }
 
       // Reset for new month
@@ -102,7 +108,7 @@ export const calculateCost = ({ plan, intervals }: CalculatePlanInput) => {
       plan,
       tracker: monthlyDemandTracker,
       kwh,
-      durationMinutes: 5,
+      durationMinutes: readIntervalLength || 5,
       currentDate: dt.toFormat("MM-dd"),
       currentWeekDay: weekDay,
       currentMinute: minuteOfDay,
@@ -124,9 +130,44 @@ export const calculateCost = ({ plan, intervals }: CalculatePlanInput) => {
     demandCost: roundTo2DecimalPlaces(finalDemandCost),
   });
 
+  // Handle connection fee
+  if (plan.fees) {
+    plan.fees.forEach((fee) => {
+      if (fee.type === "CONNECTION" && fee.term === "FIXED") {
+        totalCost += fee.amount;
+        monthlyBreakdown[0] = {
+          ...monthlyBreakdown[0],
+          cost: (monthlyBreakdown[0].cost += fee.amount),
+          connectionFee: fee.amount,
+        };
+      }
+    });
+  }
+
+  const discounts: { discount: string; percent: number }[] = [];
+  // Handle guaranteed and pay-on-time discounts
+  if (plan.discounts) {
+    plan.discounts.forEach((discount) => {
+      if (discount.type === "GUARANTEED") {
+        totalCost -= totalCost * discount.rate;
+        discounts.push({
+          discount: discount.displayName,
+          percent: discount.rate,
+        });
+      } else if (discount.category && discount.category === "PAY_ON_TIME") {
+        totalCost -= totalCost * discount.rate;
+        discounts.push({
+          discount: discount.displayName,
+          percent: discount.rate,
+        });
+      }
+    });
+  }
+
   return {
     totalCost: roundTo2DecimalPlaces(totalCost), // Annual cost
     totalKwh: roundTo2DecimalPlaces(totalKwh), // Annual usage
     monthlyBreakdown,
+    discounts,
   };
 };

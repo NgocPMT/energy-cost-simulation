@@ -1,8 +1,11 @@
 import { calculateCost } from "./modules/calculate";
-import { normalizeMode2 } from "./modules/normalize";
+import { normalizeInterval, normalizeProfile } from "./modules/normalize";
 import { fetchAndNormalizePlans, getPlans } from "./modules/plan-ingestion";
+import { RawIntervalRead } from "./simulation.type";
 
-interface SimulatePlanCostInput {
+type SimulatePlanCostInput = RawIntervalRead & { postcode: string };
+
+interface SimulatePlanCostProfileInput {
   averageMonthlyUsage: number; // kWh
   profileType:
     | "HOME_EVENING"
@@ -13,12 +16,35 @@ interface SimulatePlanCostInput {
 }
 
 const SimulationService = {
-  simulatePlanCost: async ({
+  simulatePlanCostInterval: async ({
+    date,
+    interval_read,
+    postcode,
+  }: SimulatePlanCostInput) => {
+    const intervals = normalizeInterval({ date, interval_read });
+    const rawPlans = await getPlans();
+    const plans = await fetchAndNormalizePlans({ rawPlans, postcode });
+    const results = plans.map((plan) => {
+      return {
+        planId: plan.planId,
+        displayName: plan.displayName,
+        brandName: plan.brandName,
+        simulationResult: calculateCost({ plan, intervals }),
+      };
+    });
+    return results
+      .sort(
+        (r1, r2) =>
+          r1.simulationResult.totalCost - r2.simulationResult.totalCost,
+      )
+      .slice(0, 3);
+  },
+  simulatePlanCostProfile: async ({
     averageMonthlyUsage,
     profileType,
     postcode,
-  }: SimulatePlanCostInput) => {
-    const intervals = normalizeMode2({
+  }: SimulatePlanCostProfileInput) => {
+    const intervals = normalizeProfile({
       averageMonthlyUsage,
       profileType,
       postcode,

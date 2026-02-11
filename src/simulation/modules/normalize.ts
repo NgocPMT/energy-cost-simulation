@@ -6,6 +6,7 @@ import {
   NormalizedPlan,
   NormalizedRate,
   RawDemandChargePeriod,
+  RawIntervalRead,
   RawPlanWithDetails,
   RawSingleRatePeriod,
   RawTOUPeriod,
@@ -14,8 +15,7 @@ import {
   DAILY_SOLAR_YIELD_FACTOR,
   SOLAR_SEASONAL_FACTORS,
 } from "../../solar-factors";
-
-export interface NormalizeMode2Input {
+export interface NormalizeProfileInput {
   averageMonthlyUsage: number; // kWh
   profileType: keyof typeof PROFILES;
   postcode: string;
@@ -29,8 +29,51 @@ export interface SimulatedInterval {
   exportKwh: number; // Solar export
 }
 
-export const normalizeMode2 = (
-  input: NormalizeMode2Input,
+export const normalizeInterval = (input: RawIntervalRead) => {
+  const intervals: SimulatedInterval[] = [];
+
+  const intervalLength = input.interval_read.read_interval_length; // e.g. 5 or 30
+  const rawReads = input.interval_read.interval_reads;
+  const totalDailyKwh = input.interval_read.aggregate_value;
+
+  // We calculate what percentage of the day's total energy occurs in each slot.
+  const dailyProfileShape = rawReads.map((read) => read / totalDailyKwh);
+
+  const sourceDate = DateTime.fromISO(input.date);
+  const sourceMonth = sourceDate.month as Month;
+  const sourceSeasonFactor = SEASONAL_MULTIPLIERS[sourceMonth] || 1.0;
+
+  const baseAverageDailyUsage = totalDailyKwh / sourceSeasonFactor;
+
+  // Simulate Full Year
+  let currentDate = DateTime.now().startOf("year");
+
+  for (let day = 0; day < 365; day++) {
+    const month = currentDate.month as Month;
+
+    const targetDailyKwh =
+      baseAverageDailyUsage * (SEASONAL_MULTIPLIERS[month] || 1.0);
+
+    dailyProfileShape.forEach((percentage, index) => {
+      const start = currentDate.plus({ minutes: index * intervalLength });
+      const end = start.plus({ minutes: intervalLength });
+
+      intervals.push({
+        start: start.toISO(),
+        end: end.toISO(),
+        kwh: targetDailyKwh * percentage,
+        exportKwh: 0,
+      });
+    });
+
+    currentDate = currentDate.plus({ days: 1 });
+  }
+
+  return intervals;
+};
+
+export const normalizeProfile = (
+  input: NormalizeProfileInput,
 ): SimulatedInterval[] => {
   const intervals: SimulatedInterval[] = [];
 
@@ -169,7 +212,11 @@ export const normalizePlan = (input: RawPlanWithDetails): NormalizedPlan => {
       }
       return { ...fee, rate: parseFloat(fee.rate) };
     }),
-    discounts: contract.discounts,
+    discounts: contract.discounts
+      ? contract.discounts.map((discount) => {
+          return { ...discount, rate: parseFloat(discount.percentOfBill.rate) };
+        })
+      : undefined,
     eligibilityConstraints: input.electricityContract.eligibility?.map(
       (constraint) => constraint.information,
     ),

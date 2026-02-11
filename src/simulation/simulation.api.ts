@@ -1,8 +1,9 @@
 import { api } from "encore.dev/api";
 import SimulationService from "./simulation.service";
+import { RawIntervalRead } from "./simulation.type";
 
-interface SimulatePlanCostRequest {
-  averageMonthlyUsage: number; // kWh
+export interface ProfileSimulationRequest {
+  averageMonthlyUsage: number;
   profileType:
     | "HOME_EVENING"
     | "HOME_ALL_DAY"
@@ -11,9 +12,16 @@ interface SimulatePlanCostRequest {
   postcode: string;
 }
 
-export const simulatePlanCost = api(
-  { expose: true, method: "POST", path: "/simulate-plan-cost" },
-  async (req: SimulatePlanCostRequest) => {
-    return await SimulationService.simulatePlanCost(req);
+export const simulatePlanCostProfile = api(
+  { expose: true, method: "POST", path: "/simulate-plan-cost-profile" },
+  async (req: ProfileSimulationRequest) => {
+    return await SimulationService.simulatePlanCostProfile(req);
+  },
+);
+
+export const simulatePlanCostInterval = api(
+  { expose: true, method: "POST", path: "/simulate-plan-cost-interval" },
+  async (req: RawIntervalRead & { postcode: string }) => {
+    return await SimulationService.simulatePlanCostInterval(req);
   },
 );

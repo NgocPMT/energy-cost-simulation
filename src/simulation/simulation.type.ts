@@ -1,3 +1,12 @@
+export interface RawIntervalRead {
+  date: string;
+  interval_read: {
+    aggregate_value: number;
+    read_interval_length: number;
+    interval_reads: number[];
+  };
+}
+
 export interface RawPlan {
   type: "MARKET" | "STANDING";
   brand: string;
@@ -20,16 +29,7 @@ export interface RawPlanWithDetails extends RawPlan {
     fees?: RawFee[];
     terms: string;
     isFixed: boolean;
-    discounts?: {
-      type: string;
-      description: string;
-      displayName: string;
-      methodUType: string;
-      percentOfBill?: {
-        rate: string;
-      };
-      [key: string]: any;
-    }[];
+    discounts?: RawDiscount[];
     eligibility?: {
       type: string;
       information: string;
@@ -97,6 +97,18 @@ export interface RawDemandCharge {
   [key: string]: any;
 }
 
+export interface RawDiscount {
+  type: "GUARANTEED" | "CONDITIONAL";
+  category?: string;
+  description: string;
+  displayName: string;
+  methodUType: string;
+  percentOfBill: {
+    rate: string;
+  };
+  [key: string]: any;
+}
+
 export type RawFee =
   | {
       term: "FIXED";
@@ -156,13 +168,13 @@ export type Fee =
       description: string;
     };
 
-export interface NormalizedDiscount {
-  type: string;
+export type NormalizedDiscount = {
+  type: "GUARANTEED" | "CONDITIONAL";
+  category?: string;
   description: string;
   displayName: string;
-  amount?: number;
-  rate?: number;
-}
+  rate: number;
+};
 
 export interface NormalizedDemandChargePeriod {
   startDate: string;
